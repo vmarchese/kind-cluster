@@ -29,6 +29,8 @@ The script `create_cluster.sh` creates a local kind cluster with an observabilit
     -V, --kind-verbose       Sets kind log verbosity    
 ```
 
+> Note: the prometheus installation will be performed anyway if the open telemetry collector is requested
+
 ## Examples
 
 ### 1. Create a simple cluster with default values

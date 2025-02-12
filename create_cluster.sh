@@ -347,7 +347,7 @@ spec:
     http:
       paths:
       - pathType: Prefix
-        path: /(.*)
+        path: /
         backend:
           service:
             name: simplest-query
@@ -364,15 +364,22 @@ EOF
 #
 install_prometheus(){
   echo -en "${NC}Installing Prometheus${NC} "
-  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts >> ${log_file} 2>&1
+  if ! helm ls -n observability | grep -q prometheus; then
+    echo -en "...adding prometheus community chart" >> ${log_file} 2>&1
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts >> ${log_file} 2>&1
 
-  helm install prometheus prometheus-community/prometheus -n observability >> ${log_file} 2>&1
+    echo -en "...installing prometheus" >> ${log_file} 2>&1
+    helm install prometheus prometheus-community/prometheus -n observability >> ${log_file} 2>&1
 
- ${kubectl} wait --namespace observability \
-  --for=condition=ready pod \
-  --selector=app=prometheus \
-  --timeout=120s >> ${log_file} 2>&1  
- echo -e "${CHECK}"
+    echo -en "...waiting for prometheus" >> ${log_file} 2>&1
+    ${kubectl} wait --namespace observability \
+      --for=condition=ready pod \
+      --selector=app.kubernetes.io/instance=prometheus \
+      --timeout=300s >> ${log_file} 2>&1  
+  else
+    echo -en "...prometheus already installed" >> ${log_file} 2>&1
+  fi
+  echo -e "${CHECK}"
 }
 
 #
@@ -506,24 +513,37 @@ EOF
 #
 install_otel(){
 
+[[  ${prometheus} = "0" ]] && install_prometheus
 
  echo -en "${NC}Installing OpenTelemetry Collector${NC} "
- ${kubectl} apply  -f https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml   >> ${log_file}  2>&1
 
- ${kubectl} wait --namespace opentelemetry-operator-system \
-  --for=condition=ready pod \
-  --selector=app.kubernetes.io/name=opentelemetry-operator \
-  --timeout=120s >> ${log_file} 2>&1
+  if ! helm ls -n observability | grep -q opentelemetry-operator; then
+    echo -en "...adding opentelemetry chart" >> ${log_file} 2>&1
+    helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts >> ${log_file} 2>&1
+
+    echo -en "...installing opentelemetry" >> ${log_file} 2>&1
+    helm install opentelemetry-operator open-telemetry/opentelemetry-operator -n observability \
+         --set "manager.collectorImage.repository=otel/opentelemetry-collector-k8s"    >> ${log_file} 2>&1
+
+
+    ${kubectl} wait --namespace observability\
+      --for=condition=ready pod \
+      --selector=app.kubernetes.io/name=opentelemetry-operator \
+      --timeout=240s >> ${log_file} 2>&1
+  else
+    echo -en "...opentelemetry already installed" >> ${log_file} 2>&1
+  fi      
 
 
 {
-cat <<EOF | ${kubectl} apply  -n opentelemetry-operator-system -f - 
-apiVersion: opentelemetry.io/v1alpha1
+cat <<EOF | ${kubectl} apply  -n observability -f - 
+apiVersion: opentelemetry.io/v1beta1
 kind: OpenTelemetryCollector
 metadata:
   name: simplest
 spec:
-  config: |
+  mode: deployment 
+  config: 
     receivers:
       otlp:
         protocols:
@@ -537,17 +557,17 @@ spec:
       logging:
         loglevel: debug
 
-      jaeger_grpc:
-        endpoint: "simplest-collector.observability.svc.cluster.local:14250"
+      otlp/jaeger:
+        endpoint: "simplest-collector.observability.svc.cluster.local:4317"
         tls:
-          insecure: true        
+          insecure: true
 
     service:
       pipelines:
         traces:
           receivers: [otlp]
           processors: [batch]
-          exporters: [logging,jaeger_grpc]
+          exporters: [logging,otlp/jaeger]
 EOF
 } >> ${log_file}  2>&1
 
