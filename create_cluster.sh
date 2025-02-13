@@ -340,14 +340,14 @@ kind: Ingress
 metadata:
   name: jaeger
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /\$1
+    nginx.ingress.kubernetes.io/rewrite-target: /\$base
 spec:
   rules:
   - host: jaeger.${cluster_domain}
     http:
       paths:
-      - pathType: Prefix
-        path: /
+      - pathType: ImplementationSpecific
+        path: /(?<base>.*)
         backend:
           service:
             name: simplest-query
@@ -488,14 +488,14 @@ kind: Ingress
 metadata:
   name: grafana
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /\$1
+    nginx.ingress.kubernetes.io/rewrite-target: /\$base
 spec:
   rules:
   - host: grafana.${cluster_domain}
     http:
       paths:
-      - pathType: Prefix
-        path: /(.*)
+      - pathType: ImplementationSpecific
+        path: /(?<base>.*)
         backend:
           service:
             name: grafana
