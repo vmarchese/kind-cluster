@@ -3,6 +3,8 @@
 set -Eeuo pipefail
 trap cleanup SIGINT SIGTERM ERR EXIT
 
+#KIND_IMAGE="kindest/node:v1.34.3@sha256:08497ee19eace7b4b5348db5c6a1591d7752b164530a36f855cb0f2bdcbadd48"
+
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
     
@@ -178,7 +180,7 @@ fi
 
 # create a cluster with the local registry enabled in containerd
 {
-cat <<EOF | kind create cluster -v ${kind_verbosity} --config=-
+cat <<EOF | kind create cluster  --retain -v ${kind_verbosity} --config=-
 kind: Cluster
 name: ${clustername}
 apiVersion: kind.x-k8s.io/v1alpha4
@@ -188,27 +190,8 @@ networking:
   apiServerPort: 6443
 containerdConfigPatches:
 - |-
-  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."${reg_name}:${reg_port}"]
-    endpoint = ["http://${reg_name}:5000"]
-  [plugins."io.containerd.grpc.v1.cri".registry.configs."${reg_name}:${reg_port}.tls"]
-    insecure_skip_verify = true
-    cert_file = ""
-    key_file = ""
-    ca_file = ""
-  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:${reg_port}"]
-    endpoint = ["http://${reg_name}:5000"]
-  [plugins."io.containerd.grpc.v1.cri".registry.configs."localhost:${reg_port}.tls"]
-    insecure_skip_verify = true
-    cert_file = ""
-    key_file = ""
-    ca_file = ""
-  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."${registry_hostname}:${reg_port}"]
-    endpoint = ["http://${reg_name}:5000"]
-  [plugins."io.containerd.grpc.v1.cri".registry.configs."${registry_hostname}:${reg_port}.tls"]
-    insecure_skip_verify = true
-    cert_file = ""
-    key_file = ""
-    ca_file = ""
+  [plugins."io.containerd.grpc.v1.cri".registry]
+    config_path = "/etc/containerd/certs.d"
 nodes:
 - role: control-plane
   kubeadmConfigPatches:
@@ -238,6 +221,22 @@ nodes:
 ${worker_list}
 EOF
 } >> ${log_file} 2>&1
+
+REGISTRY_DIR="/etc/containerd/certs.d/localhost:${reg_port}"
+for node in $(kind get nodes --name "${clustername}"); do
+  docker exec "${node}" mkdir -p "${REGISTRY_DIR}"
+  cat <<EOF | docker exec -i "${node}" cp /dev/stdin "${REGISTRY_DIR}/hosts.toml"
+[host."http://${reg_name}:5000"]
+EOF
+done
+
+REGISTRY_DIR2="/etc/containerd/certs.d/${registry_hostname}:${reg_port}"
+for node in $(kind get nodes --name "${clustername}"); do
+  docker exec "${node}" mkdir -p "${REGISTRY_DIR2}"
+  cat <<EOF | docker exec -i "${node}" cp /dev/stdin "${REGISTRY_DIR2}/hosts.toml"
+[host."http://${reg_name}:5000"]
+EOF
+done
 
 # connect the registry to the cluster network
 # (the network may already be connected)
