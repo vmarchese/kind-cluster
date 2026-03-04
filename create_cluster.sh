@@ -172,7 +172,8 @@ fi
 
 worker_list=""
 if [[ ${workers} != "0" ]]; then
-worker_list=$(for i in $(seq 1 ${workers}); do echo "- role: worker"; done)
+worker_list=$(for i in $(seq 1 ${workers}); do echo  "- role: worker"; done)
+
 fi
 
 # create a cluster with the local registry enabled in containerd
@@ -224,6 +225,9 @@ nodes:
           service-account-jwks-uri: ${cluster_issuer}/openid/v1/jwks
           service-account-signing-key-file: /etc/kubernetes/pki/sa.key
           service-account-key-file: /etc/kubernetes/pki/sa.pub
+  extraMounts:
+  - hostPath: /tmp/ephemeral-storage
+    containerPath: /mnt/ephemeral-storage
   extraPortMappings:
   - containerPort: 80
     hostPort: 8080
